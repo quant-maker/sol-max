@@ -1,0 +1,93 @@
+const cookie = require("cookie");
+const { parse } = require("querystring");
+
+module.exports = async (req, res) => {
+    let cookies = cookie.parse(req.headers.cookie || "");
+
+    if (req.method === "POST") {
+        req.setEncoding("utf8");
+
+        let body = "";
+        req.on("data", (chunk) => {
+            body += chunk;
+        });
+
+        req.on("end", () => {
+            const parsedData = parse(body);
+            const action = parsedData.action;
+
+            if (action === "login") {
+                const email = parsedData.email;
+                const password = parsedData.password;
+
+                if ((email === "example@gmail.com") && password === "password") {
+                    res.setHeader("Set-Cookie", cookie.serialize("session", email, {
+                        httpOnly: true,
+                        maxAge: 60 * 60 * 24, // 1 day
+                        path: "/"
+                    }));
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    return res.end(JSON.stringify({ success: true, message: "Login successful! Redirecting...", redirect: "/dashboard" }));
+                } else {
+                    res.writeHead(401, { "Content-Type": "application/json" });
+                    return res.end(JSON.stringify({ success: false, message: "Invalid credentials. Please try again." }));
+                }
+            }
+        });
+        return;
+    }
+
+    if (!cookies.session) {
+        res.writeHead(200, { "Content-Type": "text/html" });
+        return res.end(`
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Login</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #f4f4f4; }
+                    input, button { font-size: 20px; padding: 10px; margin: 10px; border-radius: 5px; }
+                    button { cursor: pointer; border: none; background-color: #007bff; color: white; }
+                    button:hover { background-color: #0056b3; }
+                    #message { margin-top: 20px; font-size: 18px; color: red; }
+                </style>
+            </head>
+            <body>
+                <form id="loginForm">
+                    <input type="hidden" name="action" value="login">
+                    <input type="email" id="email" name="email" placeholder="Email" required><br>
+                    <input type="password" id="password" name="password" placeholder="Password" required><br>
+                    <button type="submit">Login</button>
+                </form>
+                <div id="message"></div>
+                <script>
+                    document.getElementById("loginForm").addEventListener("submit", async function(event) {
+                        event.preventDefault();
+                        const formData = new FormData(this);
+                        const data = new URLSearchParams(formData);
+                        
+                        let response = await fetch("/login", {
+                            method: "POST",
+                            body: data,
+                        });
+
+                        let result = await response.json();
+                        let messageDiv = document.getElementById("message");
+
+                        if (result.success) {
+                            messageDiv.style.color = "green";
+                            messageDiv.textContent = result.message;
+                            setTimeout(() => { window.location.href = result.redirect; }, 1000);
+                        } else {
+                            messageDiv.style.color = "red";
+                            messageDiv.textContent = result.message;
+                        }
+                    });
+                </script>
+            </body>
+            </html>
+        `);
+    }
+};

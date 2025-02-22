@@ -1,0 +1,36 @@
+{
+  "name": "pump",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.ts",
+  "scripts": {
+    "start": "node server.ts"
+  },
+  "files": [
+    "dist",
+    "types"
+  ],
+  "keywords": [
+    "pumpdotfun",
+    "sdk",
+    "solana"
+  ],
+  "author": "Sohrab Ahmed",
+  "license": "ISC",
+  "devDependencies": {
+    "@coral-xyz/borsh": "^0.30.1",
+    "dotenv": "^16.4.5",
+    "js-sha256": "^0.11.0",
+    "rimraf": "^3.0.2"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.30.1",
+    "@raydium-io/raydium-sdk-v2": "^0.1.115-alpha",
+    "@rollup/plugin-json": "^6.1.0",
+    "@solana/spl-token": "^0.4.12",
+    "@solana/web3.js": "^1.98.0",
+    "bn.js": "^5.2.1",
+    "cookie": "^1.0.2",
+    "jito-ts": "^4.2.0"
+  }
+}
