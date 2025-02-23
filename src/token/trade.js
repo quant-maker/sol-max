@@ -1,15 +1,15 @@
 const dotenv = require("dotenv");
 const fs = require("fs");
-const { Connection, PublicKey, Keypair, LAMPORTS_PER_SOL } = require("@solana/web3.js");
+const { Connection, PublicKey, Keypair, LAMPORTS_PER_SOL, SystemProgram, Transaction } = require("@solana/web3.js");
 const { DEFAULT_DECIMALS, PumpFunSDK } = require("../../src");
 const NodeWallet = require("@coral-xyz/anchor/dist/cjs/nodewallet").default;
 const { AnchorProvider } = require("@coral-xyz/anchor");
 const { getOrCreateKeypair, getSPLBalance } = require("./util");
-const { sendTx } = require("../util");
+const { signTx, sendTx } = require("../util");
 const { searcherClient } = require("jito-ts/dist/sdk/block-engine/searcher");
 const { Bundle: JitoBundle } = require("jito-ts/dist/sdk/block-engine/types.js");
 const { getAssociatedTokenAddressSync } = require("@solana/spl-token");
-const { Raydium } = require("@raydium-io/raydium-sdk-v2");
+const { Raydium, liquidityStateV4Layout } = require("@raydium-io/raydium-sdk-v2");
 const BN = require('bn.js');
 
 dotenv.config();
@@ -199,17 +199,39 @@ async function sellAllTokenOnRay(contractAddress) {
             return results;
         }
 
-        console.log(`Current SPL Balance: ${currentSPLBalance}`);
         // Swap All Available Tokens for SOL
-        const swapResult = await swapTokenForSol(connection, tradeAccount, mintPublicKey, currentSPLBalance);
+        const swapResult = await _sellAllTokenOnRay(connection, tradeAccount, mintPublicKey, currentSPLBalance);
         return swapResult;
     } catch (error) {
         return "Error swapping tokens:"+ error;
     }
 }
 
+async function fetchProgramAccounts(connection, baseMint, quoteMint) {
+    const programId = new PublicKey('675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8');
+    const accounts = await connection.getProgramAccounts(programId, {
+        filters: [
+            { dataSize: liquidityStateV4Layout.span },
+            {
+                memcmp: {
+                    offset: liquidityStateV4Layout.offsetOf('baseMint'),
+                    bytes: baseMint.toBase58(),
+                },
+            },
+            {
+                memcmp: {
+                    offset: liquidityStateV4Layout.offsetOf('quoteMint'),
+                    bytes: quoteMint.toBase58(),
+                },
+            },
+        ],
+    });
+
+    return accounts;
+}
+
 // Swap Function (Raydium)
-async function swapTokenForSol(connection, account, quoteMint, amount) {
+async function _sellAllTokenOnRay(connection, account, quoteMint, amount) {
     try {
         const raydium = await Raydium.load({
             connection,
@@ -222,53 +244,72 @@ async function swapTokenForSol(connection, account, quoteMint, amount) {
 
         const baseMint = new PublicKey("So11111111111111111111111111111111111111112"); // SOL
 
-        const pool = await raydium.api.fetchPoolByMints({
-            mint1: baseMint,
-            mint2: quoteMint,
-        });
+        const programAccounts = await fetchProgramAccounts(connection, baseMint, quoteMint);
+        const poolId = programAccounts?.[0]?.pubkey?.toBase58();
 
-        const poolId = pool?.data?.[0]?.id;
         if (!poolId) {
             throw new Error("Pool ID not found.");
         }
-        
-        const poolKeys = await raydium.liquidity.getAmmPoolKeys(poolId);
-        const data = await raydium.api.fetchPoolById({ ids: poolId })
-        let poolInfo = data[0];
 
-        poolData = await raydium.liquidity.getRpcPoolInfo(poolId)
+        const { poolRpcData, poolInfo, poolKeys } = await raydium.liquidity.getPoolInfoFromRpc({ poolId });
         
         const poolInfoWithExtras = {
             ...poolInfo, // Original pool info
-            baseReserve: poolData.baseReserve,
-            quoteReserve: poolData.quoteReserve,
+            baseReserve: poolRpcData.baseReserve,
+            quoteReserve: poolRpcData.quoteReserve,
             version: 4, // Ensure version is provided
-            status: poolData.status,
+            status: poolRpcData.status,
         };
 
-        // Compute amount out
         const out = raydium.liquidity.computeAmountOut({
-            poolInfo: poolInfoWithExtras,  // Ensure additional fields are included
-            amountIn: new BN(amount),  // Must be a BN instance
-            mintIn: quoteMint.toBase58(),   // Can be a PublicKey or string
-            mintOut: baseMint.toBase58(), // Can be a PublicKey or string
+            poolInfo: poolInfoWithExtras,
+            amountIn: new BN(amount),
+            mintIn: quoteMint.toBase58(),
+            mintOut: baseMint.toBase58(),
             slippage: 1, // 100% slippage
         });
 
-        // Execute swap
-        const { execute } = await raydium.liquidity.swap({
+        const { transaction } = await raydium.liquidity.swap({
             poolInfo,
             poolKeys,
             amountIn: new BN(amount),
-            amountOut: out.minAmountOut, // Ensures slippage tolerance
+            amountOut: out.minAmountOut,
             inputMint: quoteMint.toBase58(),
             fixedSide: "in",
-            txVersion: "V0", // Transaction version
+            txVersion: "LEGACY", // Transaction version
         });
 
-        // Send transaction
-        execute({ sendAndConfirm: true });
-        return "Swap successful";
+        
+        let newTx = new Transaction();
+        newTx.add(transaction);
+
+        let jitoTip = 0.003;
+
+        const tipIxn = SystemProgram.transfer({
+            fromPubkey: account.publicKey,
+            toPubkey: new PublicKey("96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5"),
+            lamports: BigInt(jitoTip * LAMPORTS_PER_SOL),
+        });
+        newTx.add(tipIxn);
+
+        let sellResults = await signTx(
+            connection,
+            newTx,
+            account.publicKey,
+            [account],
+            0,
+            "processed"
+        );
+
+        const bundledTxns = [];
+        let results = "";
+        if (sellResults.success) {
+            bundledTxns.push(sellResults.result);
+            results += await sendBundle(bundledTxns);
+        } else {
+            results += "Error: Transaction signing error.";
+        }
+        return results;
     } catch (error) {
         return "Swap failed: " + error;
     }

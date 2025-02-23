@@ -5,7 +5,7 @@ const { sha256 } = require("js-sha256");
 const fs = require("fs");
 
 function getRandomChars() {
-    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     return letters[Math.floor(Math.random() * letters.length)];
 }
 

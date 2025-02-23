@@ -3,7 +3,7 @@
 Follow these steps to set up the project, configure environment variables, install dependencies, and run the server.
 ## 1. Install Project Dependencies
 
-To install all the libraries and dependencies use command:
+To install all the libraries and dependencies use this command:
 
 `npm install`
 
@@ -25,6 +25,6 @@ a. Rename `login.js.example` to `login.js`
 
 ## 3. Run the Server
 
-To start the server using command:
+To start the server use this command:
 
 `node server.js`
