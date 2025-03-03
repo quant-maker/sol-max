@@ -1,11 +1,11 @@
-## SolanaMM
+## SOLMax
 
 Features:
-- Dashboard login.
+- Secure dashboard login.
 - Bump buy with bonding curve check.
 - Mirco buying with MEV support.
-- Sell All.
-- Sell All on Raydium.
+- Sell all tokens on Pump.fun.
+- Sell all tokens on Raydium.
 - Close Account.
 
 Follow these steps to set up the project, configure environment variables, install dependencies, and run the server.
